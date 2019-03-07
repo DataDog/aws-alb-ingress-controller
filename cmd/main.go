@@ -30,22 +30,26 @@ import (
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"github.com/ticketmaster/aws-sdk-go-cache/cache"
 
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/aws"
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/controller"
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric"
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric/collectors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/apiserver/pkg/server/healthz"
 
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/aws"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/controller"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric/collectors"
+	servicecontroller "github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/service/controller"
+	servicemetric "github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/service/metric"
+
 	"github.com/go-logr/glogr"
 	"github.com/golang/glog"
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/version"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
+
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/version"
 )
 
 const (
@@ -99,11 +103,20 @@ func main() {
 	}
 	mc.Start()
 
+	servicemc, err := servicemetric.NewCollector(reg, options.ingressCTLConfig.NLBServiceClass)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	servicemc.Start()
+
 	cloud, err := aws.New(options.cloudConfig, options.ingressCTLConfig.ClusterName, mc, options.EnableSdkCache, cc)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	if err := controller.Initialize(&options.ingressCTLConfig, mgr, mc, cloud); err != nil {
+		glog.Fatal(err)
+	}
+	if err := servicecontroller.Initialize(&options.ingressCTLConfig, mgr, servicemc, cloud); err != nil {
 		glog.Fatal(err)
 	}
 

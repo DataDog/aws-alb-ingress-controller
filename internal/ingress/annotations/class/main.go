@@ -28,6 +28,10 @@ const (
 	annotationKubernetesIngressClass = "kubernetes.io/ingress.class"
 
 	defaultIngressClass = "alb"
+
+	annotationKubernetesServiceClass = "kubernetes.io/service.class"
+
+	defaultServiceClass = "alb"
 )
 
 // If watchIngressClass is empty, then both ingress without class annotation or with class annotation specified as `alb` will be matched.
@@ -38,6 +42,16 @@ func IsValidIngress(ingressClass string, ingress *extensions.Ingress) bool {
 		return actualIngressClass == "" || actualIngressClass == defaultIngressClass
 	}
 	return actualIngressClass == ingressClass
+}
+
+// If watchServiceClass is empty, then both services without class annotation or with class annotation specified as `alb` will be matched.
+// If watchServiceClass is not empty, then only services with class annotation specified as watchServiceClass will be matched
+func IsValidService(serviceClass string, service *corev1.Service) bool {
+	actualServiceClass := service.GetAnnotations()[annotationKubernetesServiceClass]
+	if serviceClass == "" {
+		return actualServiceClass == "" || actualServiceClass == defaultServiceClass
+	}
+	return actualServiceClass == serviceClass
 }
 
 // TODO: change this to in-sync with https://github.com/kubernetes/kubernetes/blob/13705ac81e00f154434b5c66c1ad92ac84960d7f/pkg/controller/service/service_controller.go#L592(relies on node's ready condition instead of AWS API)
