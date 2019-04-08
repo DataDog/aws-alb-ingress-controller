@@ -122,7 +122,7 @@ func (cfg *Configuration) BindFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&cfg.NLBNamePrefix, "nlb-name-prefix", defaultNLBNamePrefix,
 		`Prefix to add to ALB resources (11 alphanumeric characters or less)`)
 	fs.StringVar(&cfg.NLBDefaultBackendProtocol, "nlb-backend-protocol", defaultNLBBackendProtocol,
-		`Default protocol to use for target groups, must be "TCP"`)
+		`Default protocol to use for target groups.`)
 	fs.StringVar(&cfg.NLBDefaultTargetType, "nlb-target-type", defaultNLBTargetType,
 		`Default target type to use for target groups, must be "instance" or "ip"`)
 

@@ -56,7 +56,6 @@ type defaultGroupController struct {
 func (controller *defaultGroupController) Reconcile(ctx context.Context, service *corev1.Service) (TargetGroupGroup, error) {
 	tgByBackend := make(map[extensions.IngressBackend]TargetGroup)
 	var err error
-	// TODO: we do not want a TargetGroupGroup - only a single TargetGroup for the service.
 	for _, backend := range controller.extractServiceBackends(service) {
 		if action.Use(backend.ServicePort.String()) {
 			continue

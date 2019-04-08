@@ -84,7 +84,6 @@ func (controller *defaultController) Reconcile(ctx context.Context, options Reco
 		}
 	}
 
-	// TODO: this is currently unreachable, since PortData is always constructed with protocol TCP.
 	if options.Port.Scheme == elbv2.ProtocolEnumTls {
 		lsArn := aws.StringValue(instance.ListenerArn)
 		if err := controller.reconcileExtraCertificates(ctx, lsArn, config.ExtraCertificateARNs); err != nil {
@@ -204,9 +203,8 @@ func (controller *defaultController) buildListenerConfig(ctx context.Context, op
 		Port:     aws.Int64(options.Port.Port),
 		Protocol: aws.String(options.Port.Scheme),
 	}
-	// TODO: this is currently unreachable, since PortData is always constructed with protocol TCP.
-	switch options.Port.Scheme {
-	case elbv2.ProtocolEnumTls:
+
+	if options.Port.Scheme == elbv2.ProtocolEnumTls {
 		sslPolicy := DefaultSSLPolicy
 		_ = annotations.LoadStringAnnotation(AnnotationSSLPolicy, &sslPolicy, options.Service.Annotations)
 		config.SslPolicy = aws.String(sslPolicy)
