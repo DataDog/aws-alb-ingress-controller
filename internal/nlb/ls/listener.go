@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/service/annotations/parser"
 	"github.com/pkg/errors"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -84,13 +82,6 @@ func (controller *defaultController) Reconcile(ctx context.Context, options Reco
 		}
 	}
 
-	if options.Port.Scheme == elbv2.ProtocolEnumTls {
-		lsArn := aws.StringValue(instance.ListenerArn)
-		if err := controller.reconcileExtraCertificates(ctx, lsArn, config.ExtraCertificateARNs); err != nil {
-			return errors.Wrapf(err, "failed to reconcile extra certificates on listener %v", lsArn)
-		}
-	}
-
 	return nil
 }
 
@@ -152,50 +143,6 @@ func (controller *defaultController) LSInstanceNeedsModification(ctx context.Con
 		needModification = true
 	}
 	return needModification
-}
-
-func (controller *defaultController) reconcileExtraCertificates(ctx context.Context, lsArn string, extraCertificateARNs []string) error {
-	certificates, err := controller.cloud.DescribeListenerCertificates(ctx, lsArn)
-	if err != nil {
-		return err
-	}
-	actualExtraCertificateArns := sets.NewString()
-	for _, certificate := range certificates {
-		if !aws.BoolValue(certificate.IsDefault) {
-			actualExtraCertificateArns.Insert(aws.StringValue(certificate.CertificateArn))
-		}
-	}
-	desiredExtraCertificateArns := sets.NewString(extraCertificateARNs...)
-
-	certificatesToAdd := desiredExtraCertificateArns.Difference(actualExtraCertificateArns)
-	certificatesToRemove := actualExtraCertificateArns.Difference(desiredExtraCertificateArns)
-	for certARN := range certificatesToAdd {
-		albctx.GetLogger(ctx).Infof("adding certificate %v to listener %v", certARN, lsArn)
-		if _, err := controller.cloud.AddListenerCertificates(ctx, &elbv2.AddListenerCertificatesInput{
-			ListenerArn: aws.String(lsArn),
-			Certificates: []*elbv2.Certificate{
-				{
-					CertificateArn: aws.String(certARN),
-				},
-			},
-		}); err != nil {
-			return err
-		}
-	}
-	for certARN := range certificatesToRemove {
-		albctx.GetLogger(ctx).Infof("removing certificate %v from listener %v", certARN, lsArn)
-		if _, err := controller.cloud.RemoveListenerCertificates(ctx, &elbv2.RemoveListenerCertificatesInput{
-			ListenerArn: aws.String(lsArn),
-			Certificates: []*elbv2.Certificate{
-				{
-					CertificateArn: aws.String(certARN),
-				},
-			},
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (controller *defaultController) buildListenerConfig(ctx context.Context, options ReconcileOptions) (listenerConfig, error) {
