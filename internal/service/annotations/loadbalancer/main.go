@@ -18,6 +18,7 @@ package loadbalancer
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/service/elbv2"
@@ -37,6 +38,8 @@ type Config struct {
 	Scheme        *string
 	IPAddressType *string
 	Type          *string
+
+	TLSListenPorts map[int64]bool
 
 	Subnets    []string
 	Attributes []*elbv2.LoadBalancerAttribute
@@ -82,6 +85,8 @@ func (lb loadBalancer) Parse(ing parser.AnnotationInterface) (interface{}, error
 		lbType = aws.String(DefaultType)
 	}
 
+	tlsListenPorts, err := parseTLSListenPorts(ing)
+
 	attributes, err := parseAttributes(ing)
 	if err != nil {
 		return nil, err
@@ -94,7 +99,22 @@ func (lb loadBalancer) Parse(ing parser.AnnotationInterface) (interface{}, error
 		IPAddressType: ipAddressType,
 		Attributes:    attributes,
 		Subnets:       subnets,
+
+		TLSListenPorts: tlsListenPorts,
 	}, nil
+}
+
+func parseTLSListenPorts(ing parser.AnnotationInterface) (map[int64]bool, error) {
+	ports := parser.GetStringSliceAnnotation("tls-listen-ports", ing)
+	out := make(map[int64]bool, len(ports))
+	for _, port := range ports {
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse %q as port number", port)
+		}
+		out[int64(p)] = true
+	}
+	return out, nil
 }
 
 func parseAttributes(ing parser.AnnotationInterface) ([]*elbv2.LoadBalancerAttribute, error) {

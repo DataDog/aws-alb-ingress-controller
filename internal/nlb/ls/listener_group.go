@@ -57,6 +57,9 @@ func (controller *defaultGroupController) Reconcile(ctx context.Context, lbArn s
 			Port:   int64(port.Port),
 			Scheme: elbv2.ProtocolEnumTcp,
 		}
+		if serviceAnnos.LoadBalancer.TLSListenPorts[port.Port] {
+			port.Scheme = elbv2.ProtocolEnumTls
+		}
 		portsInUse.Insert(port.Port)
 		instance := instancesByPort[port.Port]
 		if err := controller.lsController.Reconcile(ctx, ReconcileOptions{
