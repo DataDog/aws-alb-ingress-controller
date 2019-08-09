@@ -3,8 +3,8 @@ package controller
 import (
 	"context"
 
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/nlb/lb"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/albctx"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/nlb/lb"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/service/controller/store"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/service/metric"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/pkg/util/log"
@@ -64,7 +64,7 @@ func (r *Reconciler) reconcileService(ctx context.Context, serviceKey types.Name
 	if err != nil {
 		return err
 	}
-	if err := r.updateServiceStatus(ctx, service, lbInfo); err != nil {
+	if err := r.updateServiceAnnotations(ctx, service, lbInfo); err != nil {
 		return err
 	}
 
@@ -79,16 +79,10 @@ func (r *Reconciler) deleteService(ctx context.Context, serviceKey types.Namespa
 	return nil
 }
 
-func (r *Reconciler) updateServiceStatus(ctx context.Context, service *corev1.Service, lbInfo *lb.LoadBalancer) error {
-	if len(service.Status.LoadBalancer.Ingress) != 1 ||
-		service.Status.LoadBalancer.Ingress[0].IP != "" ||
-		service.Status.LoadBalancer.Ingress[0].Hostname != lbInfo.DNSName {
-		service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
-			{
-				Hostname: lbInfo.DNSName,
-			},
-		}
-		return r.client.Status().Update(ctx, service)
+func (r *Reconciler) updateServiceAnnotations(ctx context.Context, service *corev1.Service, lbInfo *lb.LoadBalancer) error {
+	if _, ok := service.Annotations["external-dns.alpha.kubernetes.io/target"]; !ok {
+		service.Annotations["external-dns.alpha.kubernetes.io/target"] = lbInfo.DNSName
+		return r.client.Update(ctx, service)
 	}
 	return nil
 }
