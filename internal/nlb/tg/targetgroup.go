@@ -113,7 +113,8 @@ func (controller *defaultController) Reconcile(ctx context.Context, service *cor
 
 func (controller *defaultController) newTGInstance(ctx context.Context, name string, serviceAnnos *annotations.Service, healthCheckPort string) (*elbv2.TargetGroup, error) {
 	albctx.GetLogger(ctx).Infof("creating target group %v", name)
-	resp, err := controller.cloud.CreateTargetGroupWithContext(ctx, &elbv2.CreateTargetGroupInput{
+
+	nlbTargetGroup := &elbv2.CreateTargetGroupInput{
 		Name:                       aws.String(name),
 		HealthCheckIntervalSeconds: serviceAnnos.HealthCheck.IntervalSeconds,
 		HealthCheckPort:            aws.String(healthCheckPort),
@@ -123,10 +124,15 @@ func (controller *defaultController) newTGInstance(ctx context.Context, name str
 		HealthyThresholdCount:      serviceAnnos.TargetGroup.HealthyThresholdCount,
 		UnhealthyThresholdCount:    serviceAnnos.TargetGroup.UnhealthyThresholdCount,
 		Port:                       aws.Int64(targetGroupDefaultPort),
-		//HealthCheckPath:            serviceAnnos.HealthCheck.Path,
-		//Matcher:                    &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes},
 		//HealthCheckTimeoutSeconds:  serviceAnnos.HealthCheck.TimeoutSeconds,
-	})
+	}
+
+	if nlbTargetGroup.HealthCheckProtocol == "HTTP" || nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
+		nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
+		nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
+	}
+
+	resp, err := controller.cloud.CreateTargetGroupWithContext(ctx, nlbTargetGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -138,18 +144,22 @@ func (controller *defaultController) newTGInstance(ctx context.Context, name str
 func (controller *defaultController) reconcileTGInstance(ctx context.Context, instance *elbv2.TargetGroup, serviceAnnos *annotations.Service, healthCheckPort string) (*elbv2.TargetGroup, error) {
 	if controller.TGInstanceNeedsModification(ctx, instance, serviceAnnos) {
 		albctx.GetLogger(ctx).Infof("modify target group %v", aws.StringValue(instance.TargetGroupArn))
-
-		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, &elbv2.ModifyTargetGroupInput{
+		nlbTargetGroup := &elbv2.ModifyTargetGroupInput{
 			TargetGroupArn:             instance.TargetGroupArn,
 			HealthCheckIntervalSeconds: serviceAnnos.HealthCheck.IntervalSeconds,
 			HealthCheckPort:            aws.String(healthCheckPort),
 			HealthCheckProtocol:        serviceAnnos.HealthCheck.Protocol,
 			HealthyThresholdCount:      serviceAnnos.TargetGroup.HealthyThresholdCount,
 			UnhealthyThresholdCount:    serviceAnnos.TargetGroup.UnhealthyThresholdCount,
-			//HealthCheckPath:            serviceAnnos.HealthCheck.Path,
 			//HealthCheckTimeoutSeconds:  serviceAnnos.HealthCheck.TimeoutSeconds,
-			//Matcher:                    &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes},
-		})
+		}
+
+		if nlbTargetGroup.HealthCheckProtocol == "HTTP" || nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
+			nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
+			nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
+		}
+
+		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, elbTG)
 		if err != nil {
 			return instance, err
 		}
@@ -197,9 +207,10 @@ func (controller *defaultController) resolveServiceHealthCheckPort(namespace str
 
 func (controller *defaultController) TGInstanceNeedsModification(ctx context.Context, instance *elbv2.TargetGroup, serviceAnnos *annotations.Service) bool {
 	needsChange := false
-	//if !util.DeepEqual(instance.HealthCheckPath, serviceAnnos.HealthCheck.Path) {
-	//	needsChange = true
-	//}
+	if !util.DeepEqual(instance.HealthCheckPath, serviceAnnos.HealthCheck.Path) &&
+		(*serviceAnnos.HealthCheck.Protocol == "HTTP" || *serviceAnnos.HealthCheck.Protocol == "HTTPS") {
+		needsChange = true
+	}
 	if !util.DeepEqual(instance.HealthCheckPort, serviceAnnos.HealthCheck.Port) {
 		needsChange = true
 	}
@@ -212,9 +223,10 @@ func (controller *defaultController) TGInstanceNeedsModification(ctx context.Con
 	//if !util.DeepEqual(instance.HealthCheckTimeoutSeconds, serviceAnnos.HealthCheck.TimeoutSeconds) {
 	//	needsChange = true
 	//}
-	//if !util.DeepEqual(instance.Matcher.HttpCode, serviceAnnos.TargetGroup.SuccessCodes) {
-	//	needsChange = true
-	//}
+	if !util.DeepEqual(instance.Matcher.HttpCode, serviceAnnos.TargetGroup.SuccessCodes) &&
+		(*serviceAnnos.HealthCheck.Protocol == "HTTP" || *serviceAnnos.HealthCheck.Protocol == "HTTPS") {
+		needsChange = true
+	}
 	if !util.DeepEqual(instance.HealthyThresholdCount, serviceAnnos.TargetGroup.HealthyThresholdCount) {
 		needsChange = true
 	}
