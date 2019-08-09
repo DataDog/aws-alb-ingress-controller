@@ -127,7 +127,7 @@ func (controller *defaultController) newTGInstance(ctx context.Context, name str
 		//HealthCheckTimeoutSeconds:  serviceAnnos.HealthCheck.TimeoutSeconds,
 	}
 
-	if nlbTargetGroup.HealthCheckProtocol == "HTTP" || nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
+	if *nlbTargetGroup.HealthCheckProtocol == "HTTP" || *nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
 		nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
 		nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
 	}
@@ -154,12 +154,12 @@ func (controller *defaultController) reconcileTGInstance(ctx context.Context, in
 			//HealthCheckTimeoutSeconds:  serviceAnnos.HealthCheck.TimeoutSeconds,
 		}
 
-		if nlbTargetGroup.HealthCheckProtocol == "HTTP" || nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
+		if *nlbTargetGroup.HealthCheckProtocol == "HTTP" || *nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
 			nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
 			nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
 		}
 
-		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, elbTG)
+		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, nlbTargetGroup)
 		if err != nil {
 			return instance, err
 		}
