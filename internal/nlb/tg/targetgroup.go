@@ -129,7 +129,6 @@ func (controller *defaultController) newTGInstance(ctx context.Context, name str
 
 	if *nlbTargetGroup.HealthCheckProtocol == "HTTP" || *nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
 		nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
-		nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
 	}
 
 	resp, err := controller.cloud.CreateTargetGroupWithContext(ctx, nlbTargetGroup)
@@ -156,7 +155,6 @@ func (controller *defaultController) reconcileTGInstance(ctx context.Context, in
 
 		if *nlbTargetGroup.HealthCheckProtocol == "HTTP" || *nlbTargetGroup.HealthCheckProtocol == "HTTPS" {
 			nlbTargetGroup.HealthCheckPath = serviceAnnos.HealthCheck.Path
-			nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
 		}
 
 		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, nlbTargetGroup)
@@ -223,10 +221,6 @@ func (controller *defaultController) TGInstanceNeedsModification(ctx context.Con
 	//if !util.DeepEqual(instance.HealthCheckTimeoutSeconds, serviceAnnos.HealthCheck.TimeoutSeconds) {
 	//	needsChange = true
 	//}
-	if !util.DeepEqual(instance.Matcher.HttpCode, serviceAnnos.TargetGroup.SuccessCodes) &&
-		(*serviceAnnos.HealthCheck.Protocol == "HTTP" || *serviceAnnos.HealthCheck.Protocol == "HTTPS") {
-		needsChange = true
-	}
 	if !util.DeepEqual(instance.HealthyThresholdCount, serviceAnnos.TargetGroup.HealthyThresholdCount) {
 		needsChange = true
 	}
