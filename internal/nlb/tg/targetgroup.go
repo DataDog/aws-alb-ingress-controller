@@ -159,7 +159,7 @@ func (controller *defaultController) reconcileTGInstance(ctx context.Context, in
 			nlbTargetGroup.Matcher = &elbv2.Matcher{HttpCode: serviceAnnos.TargetGroup.SuccessCodes}
 		}
 
-		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, elbTG)
+		output, err := controller.cloud.ModifyTargetGroupWithContext(ctx, nlbTargetGroup)
 		if err != nil {
 			return instance, err
 		}
