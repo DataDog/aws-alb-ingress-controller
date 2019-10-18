@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	"strings"
 	"time"
 
@@ -265,11 +266,12 @@ func (c *Cloud) describeInstancesHelper(params *ec2.DescribeInstancesInput) (res
 // StatusEC2 validates EC2 connectivity
 func (c *Cloud) StatusEC2() func() error {
 	return func() error {
-		// MaxResults should be at least 5, which is enforced by EC2 API.
-		in := &ec2.DescribeTagsInput{MaxResults: aws.Int64(5)}
+		in := &elbv2.DescribeLoadBalancersInput{
+			PageSize: aws.Int64(1),
+		}
 
-		if _, err := c.ec2.DescribeTagsWithContext(context.TODO(), in); err != nil {
-			return fmt.Errorf("[ec2.DescribeTagsWithContext]: %v", err)
+		if _, err := c.elbv2.DescribeLoadBalancersWithContext(context.TODO(), in); err != nil {
+			return fmt.Errorf("[elbv2.DescribeLoadBalancersWithContext]: %v", err)
 		}
 		return nil
 	}
