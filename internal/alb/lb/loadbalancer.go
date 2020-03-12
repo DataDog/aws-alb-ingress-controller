@@ -45,6 +45,8 @@ func NewController(
 	sgAssociationController sg.AssociationController,
 	tagsController tags.Controller) Controller {
 	attrsController := NewAttributesController(cloud)
+	wafController := NewWAFController(cloud)
+	shieldController := NewShieldController(cloud)
 
 	return &defaultController{
 		cloud:                   cloud,
@@ -55,6 +57,8 @@ func NewController(
 		sgAssociationController: sgAssociationController,
 		tagsController:          tagsController,
 		attrsController:         attrsController,
+		wafController:           wafController,
+		shieldController:        shieldController,
 	}
 }
 
@@ -78,6 +82,8 @@ type defaultController struct {
 	sgAssociationController sg.AssociationController
 	tagsController          tags.Controller
 	attrsController         AttributesController
+	wafController           WAFController
+	shieldController        ShieldController
 }
 
 var _ Controller = (*defaultController)(nil)
@@ -87,6 +93,7 @@ func (controller *defaultController) Reconcile(ctx context.Context, ingress *ext
 	if err != nil {
 		return nil, err
 	}
+
 	lbConfig, err := controller.buildLBConfig(ctx, ingress, ingressAnnos)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build LoadBalancer configuration due to %v", err)
@@ -95,7 +102,12 @@ func (controller *defaultController) Reconcile(ctx context.Context, ingress *ext
 		return nil, err
 	}
 
-	instance, err := controller.ensureLBInstance(ctx, lbConfig)
+	ingKey := k8s.NamespacedName(ingress)
+	sgAttachment, err := controller.sgAssociationController.Setup(ctx, ingKey)
+	if err != nil {
+		return nil, err
+	}
+	instance, err := controller.ensureLBInstance(ctx, lbConfig, sgAttachment)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +117,13 @@ func (controller *defaultController) Reconcile(ctx context.Context, ingress *ext
 	}
 
 	if controller.store.GetConfig().FeatureGate.Enabled(config.WAF) {
-		if err := controller.reconcileWAF(ctx, lbArn, ingressAnnos.LoadBalancer.WebACLId); err != nil {
+		if err := controller.wafController.Reconcile(ctx, lbArn, ingress); err != nil {
+			return nil, err
+		}
+	}
+
+	if controller.store.GetConfig().FeatureGate.Enabled(config.ShieldAdvanced) {
+		if err := controller.shieldController.Reconcile(ctx, lbArn, ingress); err != nil {
 			return nil, err
 		}
 	}
@@ -122,7 +140,7 @@ func (controller *defaultController) Reconcile(ctx context.Context, ingress *ext
 		return nil, fmt.Errorf("failed to GC targetGroups due to %v", err)
 	}
 
-	if err := controller.sgAssociationController.Reconcile(ctx, ingress, instance, tgGroup); err != nil {
+	if err := controller.sgAssociationController.Reconcile(ctx, ingKey, sgAttachment, instance, tgGroup); err != nil {
 		return nil, fmt.Errorf("failed to reconcile securityGroup associations due to %v", err)
 	}
 	return &LoadBalancer{
@@ -138,9 +156,6 @@ func (controller *defaultController) Delete(ctx context.Context, ingressKey type
 		return fmt.Errorf("failed to find existing LoadBalancer due to %v", err)
 	}
 	if instance != nil {
-		if err = controller.sgAssociationController.Delete(ctx, ingressKey, instance); err != nil {
-			return fmt.Errorf("failed to clean up securityGroups due to %v", err)
-		}
 		if err = controller.lsGroupController.Delete(ctx, aws.StringValue(instance.LoadBalancerArn)); err != nil {
 			return fmt.Errorf("failed to delete listeners due to %v", err)
 		}
@@ -153,24 +168,27 @@ func (controller *defaultController) Delete(ctx context.Context, ingressKey type
 			return err
 		}
 	}
+	if err = controller.sgAssociationController.Delete(ctx, ingressKey); err != nil {
+		return fmt.Errorf("failed to clean up securityGroups due to %v", err)
+	}
 
 	return nil
 }
 
-func (controller *defaultController) ensureLBInstance(ctx context.Context, lbConfig *loadBalancerConfig) (*elbv2.LoadBalancer, error) {
+func (controller *defaultController) ensureLBInstance(ctx context.Context, lbConfig *loadBalancerConfig, sgAttachment sg.LbAttachmentInfo) (*elbv2.LoadBalancer, error) {
 	instance, err := controller.cloud.GetLoadBalancerByName(ctx, lbConfig.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find existing LoadBalancer due to %v", err)
 	}
 	if instance == nil {
-		instance, err = controller.newLBInstance(ctx, lbConfig)
+		instance, err = controller.newLBInstance(ctx, lbConfig, sgAttachment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create LoadBalancer due to %v", err)
 		}
 		return instance, nil
 	}
 	if controller.isLBInstanceNeedRecreation(ctx, instance, lbConfig) {
-		instance, err = controller.recreateLBInstance(ctx, instance, lbConfig)
+		instance, err = controller.recreateLBInstance(ctx, instance, lbConfig, sgAttachment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to recreate LoadBalancer due to %v", err)
 		}
@@ -182,15 +200,16 @@ func (controller *defaultController) ensureLBInstance(ctx context.Context, lbCon
 	return instance, nil
 }
 
-func (controller *defaultController) newLBInstance(ctx context.Context, lbConfig *loadBalancerConfig) (*elbv2.LoadBalancer, error) {
+func (controller *defaultController) newLBInstance(ctx context.Context, lbConfig *loadBalancerConfig, sgAttachment sg.LbAttachmentInfo) (*elbv2.LoadBalancer, error) {
 	albctx.GetLogger(ctx).Infof("creating LoadBalancer %v", lbConfig.Name)
 	resp, err := controller.cloud.CreateLoadBalancerWithContext(ctx, &elbv2.CreateLoadBalancerInput{
-		Name:          aws.String(lbConfig.Name),
-		Type:          lbConfig.Type,
-		Scheme:        lbConfig.Scheme,
-		IpAddressType: lbConfig.IpAddressType,
-		Subnets:       aws.StringSlice(lbConfig.Subnets),
-		Tags:          tags.ConvertToELBV2(lbConfig.Tags),
+		Name:           aws.String(lbConfig.Name),
+		Type:           lbConfig.Type,
+		Scheme:         lbConfig.Scheme,
+		IpAddressType:  lbConfig.IpAddressType,
+		SecurityGroups: aws.StringSlice(sgAttachment.SGIDs()),
+		Subnets:        aws.StringSlice(lbConfig.Subnets),
+		Tags:           tags.ConvertToELBV2(lbConfig.Tags),
 	})
 	if err != nil {
 		albctx.GetLogger(ctx).Errorf("failed to create LoadBalancer %v due to %v", lbConfig.Name, err)
@@ -204,13 +223,13 @@ func (controller *defaultController) newLBInstance(ctx context.Context, lbConfig
 	return instance, nil
 }
 
-func (controller *defaultController) recreateLBInstance(ctx context.Context, existingInstance *elbv2.LoadBalancer, lbConfig *loadBalancerConfig) (*elbv2.LoadBalancer, error) {
+func (controller *defaultController) recreateLBInstance(ctx context.Context, existingInstance *elbv2.LoadBalancer, lbConfig *loadBalancerConfig, sgAttachment sg.LbAttachmentInfo) (*elbv2.LoadBalancer, error) {
 	existingLBArn := aws.StringValue(existingInstance.LoadBalancerArn)
 	albctx.GetLogger(ctx).Infof("deleting LoadBalancer %v for recreation", existingLBArn)
 	if err := controller.cloud.DeleteLoadBalancerByArn(ctx, existingLBArn); err != nil {
 		return nil, err
 	}
-	return controller.newLBInstance(ctx, lbConfig)
+	return controller.newLBInstance(ctx, lbConfig, sgAttachment)
 }
 
 func (controller *defaultController) reconcileLBInstance(ctx context.Context, instance *elbv2.LoadBalancer, lbConfig *loadBalancerConfig) error {
@@ -246,48 +265,6 @@ func (controller *defaultController) reconcileLBInstance(ctx context.Context, in
 	return nil
 }
 
-func (controller *defaultController) reconcileWAF(ctx context.Context, lbArn string, webACLID *string) error {
-	webACLSummary, err := controller.cloud.GetWebACLSummary(ctx, aws.String(lbArn))
-	if err != nil {
-		return fmt.Errorf("error getting web acl for load balancer %v: %v", lbArn, err)
-	}
-
-	if webACLID != nil {
-		b, err := controller.cloud.WebACLExists(ctx, webACLID)
-		if err != nil {
-			return fmt.Errorf("error fetching web acl %v: %v", aws.StringValue(webACLID), err)
-		}
-		if !b {
-			return fmt.Errorf("web acl %v does not exist", aws.StringValue(webACLID))
-		}
-	}
-
-	switch {
-	case webACLSummary != nil && webACLID == nil:
-		{
-			albctx.GetLogger(ctx).Infof("disassociate WAF on %v", lbArn)
-			if _, err := controller.cloud.DisassociateWAF(ctx, aws.String(lbArn)); err != nil {
-				return fmt.Errorf("failed to disassociate webACL on loadBalancer %v due to %v", lbArn, err)
-			}
-		}
-	case webACLSummary != nil && webACLID != nil && aws.StringValue(webACLSummary.WebACLId) != aws.StringValue(webACLID):
-		{
-			albctx.GetLogger(ctx).Infof("associate WAF on %v to %v", lbArn, aws.StringValue(webACLID))
-			if _, err := controller.cloud.AssociateWAF(ctx, aws.String(lbArn), webACLID); err != nil {
-				return fmt.Errorf("failed to associate webACL on loadBalancer %v due to %v", lbArn, err)
-			}
-		}
-	case webACLSummary == nil && webACLID != nil:
-		{
-			albctx.GetLogger(ctx).Infof("associate WAF on %v to %v", lbArn, aws.StringValue(webACLID))
-			if _, err := controller.cloud.AssociateWAF(ctx, aws.String(lbArn), webACLID); err != nil {
-				return fmt.Errorf("failed to associate webACL on loadBalancer %v due to %v", lbArn, err)
-			}
-		}
-	}
-	return nil
-}
-
 func (controller *defaultController) isLBInstanceNeedRecreation(ctx context.Context, instance *elbv2.LoadBalancer, lbConfig *loadBalancerConfig) bool {
 	if !util.DeepEqual(instance.Scheme, lbConfig.Scheme) {
 		albctx.GetLogger(ctx).Infof("LoadBalancer %s need recreation due to scheme changed(%s => %s)",
@@ -306,6 +283,7 @@ func (controller *defaultController) buildLBConfig(ctx context.Context, ingress 
 	if err != nil {
 		return nil, err
 	}
+
 	return &loadBalancerConfig{
 		Name: controller.nameTagGen.NameLB(ingress.Namespace, ingress.Name),
 		Tags: lbTags,
@@ -373,7 +351,6 @@ func (controller *defaultController) resolveSubnets(ctx context.Context, scheme 
 }
 
 func (controller *defaultController) clusterSubnets(ctx context.Context, scheme string) ([]string, error) {
-	var subnetIds []string
 	var useableSubnets []*ec2.Subnet
 	var out []string
 	var key string
@@ -386,27 +363,12 @@ func (controller *defaultController) clusterSubnets(ctx context.Context, scheme 
 		return nil, fmt.Errorf("invalid scheme [%s]", scheme)
 	}
 
-	clusterSubnets, err := controller.cloud.GetClusterSubnets()
+	clusterSubnets, err := controller.cloud.GetClusterSubnets(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AWS tags. Error: %s", err.Error())
+		return nil, fmt.Errorf("unable to fetch subnets. Error: %s", err.Error())
 	}
 
-	for arn, subnetTags := range clusterSubnets {
-		for _, tag := range subnetTags {
-			if aws.StringValue(tag.Key) == key {
-				p := strings.Split(arn, "/")
-				subnetID := p[len(p)-1]
-				subnetIds = append(subnetIds, subnetID)
-			}
-		}
-	}
-
-	o, err := controller.cloud.GetSubnetsByNameOrID(ctx, subnetIds)
-	if err != nil {
-		return nil, fmt.Errorf("unable to fetch subnets due to %v", err)
-	}
-
-	for _, subnet := range o {
+	for _, subnet := range clusterSubnets {
 		if subnetIsUsable(subnet, useableSubnets) {
 			useableSubnets = append(useableSubnets, subnet)
 			out = append(out, aws.StringValue(subnet.SubnetId))

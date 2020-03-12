@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/albctx"
-
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/alb/tags"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/albctx"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/aws"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/action"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/backend"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/controller/store"
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // GroupController manages all target groups for one ingress.
@@ -34,10 +36,12 @@ func NewGroupController(
 	store store.Storer,
 	nameTagGen NameTagGenerator,
 	tagsController tags.Controller,
-	endpointResolver backend.EndpointResolver) GroupController {
-	tgController := NewController(cloud, store, nameTagGen, tagsController, endpointResolver)
+	endpointResolver backend.EndpointResolver,
+	client client.Client) GroupController {
+	tgController := NewController(cloud, store, nameTagGen, tagsController, endpointResolver, client)
 	return &defaultGroupController{
 		cloud:        cloud,
+		store:        store,
 		nameTagGen:   nameTagGen,
 		tgController: tgController,
 	}
@@ -47,6 +51,7 @@ var _ GroupController = (*defaultGroupController)(nil)
 
 type defaultGroupController struct {
 	cloud      aws.CloudAPI
+	store      store.Storer
 	nameTagGen NameTagGenerator
 
 	tgController Controller
@@ -54,11 +59,12 @@ type defaultGroupController struct {
 
 func (controller *defaultGroupController) Reconcile(ctx context.Context, ingress *extensions.Ingress) (TargetGroupGroup, error) {
 	tgByBackend := make(map[extensions.IngressBackend]TargetGroup)
-	var err error
-	for _, backend := range controller.extractIngressBackends(ingress) {
-		if action.Use(backend.ServicePort.String()) {
-			continue
-		}
+
+	backends, err := ExtractTargetGroupBackends(ingress)
+	if err != nil {
+		return TargetGroupGroup{}, err
+	}
+	for _, backend := range backends {
 		if _, ok := tgByBackend[backend]; ok {
 			continue
 		}
@@ -91,6 +97,7 @@ func (controller *defaultGroupController) GC(ctx context.Context, tgGroup Target
 	unusedTgArns := currentTgArns.Difference(usedTgArns)
 	for arn := range unusedTgArns {
 		albctx.GetLogger(ctx).Infof("deleting target group %v", arn)
+		controller.tgController.StopReconcilingPodConditionStatus(arn)
 		if err := controller.cloud.DeleteTargetGroupByArn(ctx, arn); err != nil {
 			return fmt.Errorf("failed to delete targetGroup due to %v", err)
 		}
@@ -106,19 +113,49 @@ func (controller *defaultGroupController) Delete(ctx context.Context, ingressKey
 	return controller.GC(ctx, tgGroup)
 }
 
-// TODO, should be k8s utils :D
-func (controller *defaultGroupController) extractIngressBackends(ingress *extensions.Ingress) []extensions.IngressBackend {
-	var output []extensions.IngressBackend
+func ExtractTargetGroupBackends(ingress *extensions.Ingress) ([]extensions.IngressBackend, error) {
+	var rawIngBackends []extensions.IngressBackend
 	if ingress.Spec.Backend != nil {
-		output = append(output, *ingress.Spec.Backend)
+		rawIngBackends = append(rawIngBackends, *ingress.Spec.Backend)
 	}
 	for _, rule := range ingress.Spec.Rules {
 		if rule.HTTP == nil {
 			continue
 		}
 		for _, path := range rule.HTTP.Paths {
-			output = append(output, path.Backend)
+			rawIngBackends = append(rawIngBackends, path.Backend)
 		}
 	}
-	return output
+
+	var ingBackends []extensions.IngressBackend
+	for _, ingBackend := range rawIngBackends {
+		if action.Use(ingBackend.ServicePort.String()) {
+			continue
+		}
+		ingBackends = append(ingBackends, ingBackend)
+	}
+
+	raw, err := action.NewParser().Parse(ingress)
+	if err != nil {
+		return nil, err
+	}
+
+	actions := raw.(*action.Config).Actions
+
+	for _, action := range actions {
+		if aws.StringValue(action.Type) != elbv2.ActionTypeEnumForward {
+			continue
+		}
+
+		for _, tgt := range action.ForwardConfig.TargetGroups {
+			if tgt.ServiceName != nil {
+				ingBackends = append(ingBackends, extensions.IngressBackend{
+					ServiceName: aws.StringValue(tgt.ServiceName),
+					ServicePort: intstr.Parse(aws.StringValue(tgt.ServicePort)),
+				})
+			}
+		}
+	}
+
+	return ingBackends, nil
 }

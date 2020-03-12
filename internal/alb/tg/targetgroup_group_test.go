@@ -5,7 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/aws"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/controller/config"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/controller/store"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -324,8 +327,9 @@ func TestDefaultGroupController_Reconcile(t *testing.T) {
 			Name: "Reconcile succeeds with backend using annotation",
 			Ingress: extensions.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "ingress",
-					Namespace: "namespace",
+					Name:        "ingress",
+					Namespace:   "namespace",
+					Annotations: map[string]string{},
 				},
 				Spec: extensions.IngressSpec{
 					Rules: []extensions.IngressRule{
@@ -381,6 +385,82 @@ func TestDefaultGroupController_Reconcile(t *testing.T) {
 			},
 		},
 		{
+			Name: "Reconcile succeeds with service backend using annotation",
+			Ingress: extensions.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ingress",
+					Namespace: "namespace",
+					Annotations: map[string]string{
+						"alb.ingress.kubernetes.io/actions.weighted-routing": `{"Type":"forward","ForwardConfig":{"TargetGroups":[{"Weight":1,"ServiceName":"service1","ServicePort":"80"},{"Weight":1,"ServiceName":"service2","ServicePort":"80"}]}}`,
+					},
+				},
+				Spec: extensions.IngressSpec{
+					Rules: []extensions.IngressRule{
+						{
+							IngressRuleValue: extensions.IngressRuleValue{
+								HTTP: &extensions.HTTPIngressRuleValue{
+									Paths: []extensions.HTTPIngressPath{
+										{
+											Path: "/path1",
+											Backend: extensions.IngressBackend{
+												ServiceName: "service1",
+												ServicePort: intstr.FromInt(80),
+											},
+										},
+										{
+											Path: "/path2",
+											Backend: extensions.IngressBackend{
+												ServiceName: "weighted-routing",
+												ServicePort: intstr.FromString("use-annotation"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			TGReconcileCalls: []TGReconcileCall{
+				{
+					Backend: extensions.IngressBackend{
+						ServiceName: "service1",
+						ServicePort: intstr.FromInt(80),
+					},
+					TargetGroup: TargetGroup{
+						Arn: "arn1",
+					},
+				},
+				{
+					Backend: extensions.IngressBackend{
+						ServiceName: "service2",
+						ServicePort: intstr.FromInt(80),
+					},
+					TargetGroup: TargetGroup{
+						Arn: "arn2",
+					},
+				},
+			},
+			TagTGGroupCall: &TagTGGroupCall{
+				Namespace:   "namespace",
+				IngressName: "ingress",
+				Tags:        map[string]string{"key1": "value1", "key2": "value2"},
+			},
+			ExpectedTGGroup: TargetGroupGroup{
+				TGByBackend: map[extensions.IngressBackend]TargetGroup{
+					{
+						ServiceName: "service1",
+						ServicePort: intstr.FromInt(80),
+					}: {Arn: "arn1"},
+					{
+						ServiceName: "service2",
+						ServicePort: intstr.FromInt(80),
+					}: {Arn: "arn2"},
+				},
+				selector: map[string]string{"key1": "value1", "key2": "value2"},
+			},
+		},
+		{
 			Name: "Reconcile failed when reconcile targetGroup",
 			Ingress: extensions.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
@@ -431,9 +511,16 @@ func TestDefaultGroupController_Reconcile(t *testing.T) {
 				mockTGController.On("Reconcile", mock.Anything, &tc.Ingress, call.Backend).Return(call.TargetGroup, call.Err)
 			}
 
+			mockStore := &store.MockStorer{}
+			mockStore.On("GetConfig").Return(
+				&config.Configuration{
+					DefaultTargetType: elbv2.TargetTypeEnumInstance,
+				}, nil)
+
 			controller := &defaultGroupController{
 				cloud:        cloud,
 				nameTagGen:   mockNameTagGen,
+				store:        mockStore,
 				tgController: mockTGController,
 			}
 
@@ -533,6 +620,9 @@ func TestDefaultGroupController_GC(t *testing.T) {
 		}
 		mockNameTagGen := &MockNameTagGenerator{}
 		mockTGController := &MockController{}
+		for _, call := range tc.DeleteTargetGroupByArnCalls {
+			mockTGController.On("StopReconcilingPodConditionStatus", call.Arn).Return()
+		}
 
 		controller := &defaultGroupController{
 			cloud:        cloud,
@@ -641,6 +731,9 @@ func TestDefaultGroupController_Delete(t *testing.T) {
 			mockNameTagGen.On("TagTGGroup", tc.TagTGGroupCall.Namespace, tc.TagTGGroupCall.IngressName).Return(tc.TagTGGroupCall.Tags)
 		}
 		mockTGController := &MockController{}
+		for _, call := range tc.DeleteTargetGroupByArnCalls {
+			mockTGController.On("StopReconcilingPodConditionStatus", call.Arn).Return()
+		}
 
 		controller := &defaultGroupController{
 			cloud:        cloud,

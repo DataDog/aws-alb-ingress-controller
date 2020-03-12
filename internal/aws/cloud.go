@@ -15,9 +15,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi/resourcegroupstaggingapiiface"
+	"github.com/aws/aws-sdk-go/service/shield"
+	"github.com/aws/aws-sdk-go/service/shield/shieldiface"
 	"github.com/aws/aws-sdk-go/service/wafregional"
 	"github.com/aws/aws-sdk-go/service/wafregional/wafregionaliface"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric"
+	"github.com/ticketmaster/aws-sdk-go-cache/cache"
 )
 
 type CloudAPI interface {
@@ -26,7 +29,11 @@ type CloudAPI interface {
 	ELBV2API
 	IAMAPI
 	ResourceGroupsTaggingAPIAPI
+	ShieldAPI
 	WAFRegionalAPI
+
+	GetClusterName() string
+	GetVpcID() string
 }
 
 type Cloud struct {
@@ -38,6 +45,7 @@ type Cloud struct {
 	ec2         ec2iface.EC2API
 	elbv2       elbv2iface.ELBV2API
 	iam         iamiface.IAMAPI
+	shield      shieldiface.ShieldAPI
 	rgt         resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI
 	wafregional wafregionaliface.WAFRegionalAPI
 }
@@ -46,8 +54,8 @@ type Cloud struct {
 // But due to huge number of aws clients, it's best to have one container AWS client that embed these aws clients.
 // TODO: remove clusterName dependency
 // TODO: remove mc dependency like https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/providers/aws/aws_metrics.go
-func New(cfg CloudConfig, clusterName string, mc metric.Collector) (CloudAPI, error) {
-	awsSession := NewSession(&aws.Config{MaxRetries: aws.Int(cfg.APIMaxRetries)}, cfg.APIDebug, mc)
+func New(cfg CloudConfig, clusterName string, mc metric.Collector, ce bool, cc *cache.Config) (CloudAPI, error) {
+	awsSession := NewSession(&aws.Config{MaxRetries: aws.Int(cfg.APIMaxRetries)}, cfg.APIDebug, mc, ce, cc)
 	metadata := ec2metadata.New(awsSession)
 
 	if len(cfg.VpcID) == 0 {
@@ -74,7 +82,16 @@ func New(cfg CloudConfig, clusterName string, mc metric.Collector) (CloudAPI, er
 		ec2.New(awsSession, regionCfg),
 		elbv2.New(awsSession, regionCfg),
 		iam.New(awsSession, regionCfg),
+		shield.New(awsSession, &aws.Config{Region: aws.String("us-east-1")}),
 		resourcegroupstaggingapi.New(awsSession, regionCfg),
 		wafregional.New(awsSession, regionCfg),
 	}, nil
+}
+
+func (c *Cloud) GetClusterName() string {
+	return c.clusterName
+}
+
+func (c *Cloud) GetVpcID() string {
+	return c.vpcID
 }

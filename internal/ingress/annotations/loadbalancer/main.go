@@ -37,11 +37,13 @@ type PortData struct {
 }
 
 type Config struct {
-	Scheme        *string
-	IPAddressType *string
-	WebACLId      *string
+	Scheme         *string
+	IPAddressType  *string
+	WebACLId       *string
+	ShieldAdvanced *bool
 
 	InboundCidrs   []string
+	InboundV6CIDRs []string
 	Ports          []PortData
 	SecurityGroups []string
 	Subnets        []string
@@ -64,13 +66,6 @@ func NewParser(r resolver.Resolver) parser.IngressAnnotation {
 
 // Parse parses the annotations contained in the resource
 func (lb loadBalancer) Parse(ing parser.AnnotationInterface) (interface{}, error) {
-	// support legacy waf-acl-id annotation
-	webACLId, _ := parser.GetStringAnnotation("waf-acl-id", ing)
-	w, err := parser.GetStringAnnotation("web-acl-id", ing)
-	if err == nil {
-		webACLId = w
-	}
-
 	ipAddressType, err := parser.GetStringAnnotation("ip-address-type", ing)
 	if err != nil {
 		ipAddressType = aws.String(DefaultIPAddressType)
@@ -102,23 +97,40 @@ func (lb loadBalancer) Parse(ing parser.AnnotationInterface) (interface{}, error
 	securityGroups := parser.GetStringSliceAnnotation("security-groups", ing)
 	subnets := parser.GetStringSliceAnnotation("subnets", ing)
 
-	cidrs, err := parseCidrs(ing)
+	shieldAdvanced, err := parseBoolean(ing, aws.String("shield-advanced-protection"))
+	if err != nil {
+		return nil, err
+	}
+
+	v4CIDRs, v6CIDRs, err := parseCidrs(ing)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Config{
-		WebACLId:      webACLId,
 		Scheme:        scheme,
 		IPAddressType: ipAddressType,
 
-		Attributes:   attributes,
-		InboundCidrs: cidrs,
-		Ports:        ports,
+		Attributes:     attributes,
+		InboundCidrs:   v4CIDRs,
+		InboundV6CIDRs: v6CIDRs,
+		Ports:          ports,
+		ShieldAdvanced: shieldAdvanced,
 
 		Subnets:        subnets,
 		SecurityGroups: securityGroups,
 	}, nil
+}
+
+// parses boolean annotation and returns reference to it or nil if missing
+func parseBoolean(ing parser.AnnotationInterface, key *string) (*bool, error) {
+	value, err := parser.GetBoolAnnotation(aws.StringValue(key), ing)
+	if err == errors.ErrMissingAnnotations {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 func parseAttributes(ing parser.AnnotationInterface) ([]*elbv2.LoadBalancerAttribute, error) {
@@ -203,7 +215,7 @@ func parsePorts(ing parser.AnnotationInterface) ([]PortData, error) {
 	return lps, nil
 }
 
-func parseCidrs(ing parser.AnnotationInterface) (out []string, err error) {
+func parseCidrs(ing parser.AnnotationInterface) (v4CIDRs, v6CIDRs []string, err error) {
 	cidrConfig := parser.GetStringSliceAnnotation("security-group-inbound-cidrs", ing)
 	if len(cidrConfig) != 0 {
 		glog.Warningf("`security-group-inbound-cidrs` annotation is deprecated, use `inbound-cidrs` instead")
@@ -212,20 +224,28 @@ func parseCidrs(ing parser.AnnotationInterface) (out []string, err error) {
 	}
 
 	for _, inboundCidr := range cidrConfig {
-		ip, _, err := net.ParseCIDR(inboundCidr)
+		_, _, err := net.ParseCIDR(inboundCidr)
 		if err != nil {
-			return out, err
+			return v4CIDRs, v6CIDRs, err
 		}
 
-		if ip.To4() == nil {
-			return out, fmt.Errorf("CIDR must use an IPv4 address: %v", inboundCidr)
+		if strings.Contains(inboundCidr, ":") {
+			v6CIDRs = append(v6CIDRs, inboundCidr)
+		} else {
+			v4CIDRs = append(v4CIDRs, inboundCidr)
 		}
-		out = append(out, inboundCidr)
 	}
-	if len(out) == 0 {
-		out = append(out, "0.0.0.0/0")
+
+	if len(v4CIDRs) == 0 && len(v6CIDRs) == 0 {
+		v4CIDRs = append(v4CIDRs, "0.0.0.0/0")
+
+		addrType, _ := parser.GetStringAnnotation("ip-address-type", ing)
+		if addrType != nil && *addrType == elbv2.IpAddressTypeDualstack {
+			v6CIDRs = append(v6CIDRs, "::/0")
+		}
 	}
-	return out, nil
+
+	return v4CIDRs, v6CIDRs, nil
 }
 
 func Dummy() *Config {

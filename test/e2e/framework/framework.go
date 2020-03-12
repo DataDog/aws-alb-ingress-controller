@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"time"
 
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/aws"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/metric"
@@ -10,6 +11,7 @@ import (
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ticketmaster/aws-sdk-go-cache/cache"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -23,7 +25,7 @@ type Framework struct {
 	Cloud           aws.CloudAPI
 	ResourceManager *resource.Manager
 
-	Options Options
+	Options *Options
 
 	// To make sure that this framework cleans up after itself, no matter what,
 	// we install a Cleanup action before each test and clear it after.  If we
@@ -34,7 +36,7 @@ type Framework struct {
 // New makes a new framework and sets up a BeforeEach/AfterEach for you.
 func New() *Framework {
 	f := &Framework{
-		Options: globalOptions,
+		Options: &globalOptions,
 	}
 
 	ginkgo.BeforeEach(f.BeforeEach)
@@ -54,10 +56,11 @@ func (f *Framework) BeforeEach() {
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	}
 	if f.Cloud == nil {
+		cc := cache.NewConfig(0 * time.Millisecond)
 		reg := prometheus.NewRegistry()
 		mc, _ := metric.NewCollector(reg, "alb")
 		var err error
-		f.Cloud, err = aws.New(aws.CloudConfig{Region: f.Options.AWSRegion, VpcID: f.Options.AWSVPCID}, f.Options.ClusterName, mc)
+		f.Cloud, err = aws.New(aws.CloudConfig{Region: f.Options.AWSRegion, VpcID: f.Options.AWSVPCID}, f.Options.ClusterName, mc, false, cc)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	}
 

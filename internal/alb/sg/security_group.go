@@ -13,6 +13,9 @@ import (
 
 // SecurityGroupController manages configuration on securityGroup.
 type SecurityGroupController interface {
+	// EnsureSGInstance ensures security group with name exists.
+	EnsureSGInstanceByName(ctx context.Context, name string, description string) (*ec2.SecurityGroup, error)
+
 	// Reconcile ensures the securityGroup configuration matches specification.
 	Reconcile(ctx context.Context, instance *ec2.SecurityGroup, inboundPermissions []*ec2.IpPermission, tags map[string]string) error
 }
@@ -20,6 +23,28 @@ type SecurityGroupController interface {
 type securityGroupController struct {
 	cloud          aws.CloudAPI
 	tagsController tags.Controller
+}
+
+func (c *securityGroupController) EnsureSGInstanceByName(ctx context.Context, name string, description string) (*ec2.SecurityGroup, error) {
+	sgInstance, err := c.cloud.GetSecurityGroupByName(name)
+	if err != nil {
+		return nil, err
+	}
+	if sgInstance != nil {
+		return sgInstance, nil
+	}
+	albctx.GetLogger(ctx).Infof("creating securityGroup %v:%v", name, description)
+	resp, err := c.cloud.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   aws.String(name),
+		Description: aws.String(description),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ec2.SecurityGroup{
+		GroupId:   resp.GroupId,
+		GroupName: aws.String(name),
+	}, nil
 }
 
 func (c *securityGroupController) Reconcile(ctx context.Context, sgInstance *ec2.SecurityGroup, inboundPermissions []*ec2.IpPermission, tags map[string]string) error {
@@ -105,6 +130,12 @@ func ipPermissionEquals(source *ec2.IpPermission, target *ec2.IpPermission) bool
 	if len(diffIPRanges(target.IpRanges, source.IpRanges)) != 0 {
 		return false
 	}
+	if len(diffIPv6Ranges(source.Ipv6Ranges, target.Ipv6Ranges)) != 0 {
+		return false
+	}
+	if len(diffIPv6Ranges(target.Ipv6Ranges, source.Ipv6Ranges)) != 0 {
+		return false
+	}
 	if len(diffUserIDGroupPairs(source.UserIdGroupPairs, target.UserIdGroupPairs)) != 0 {
 		return false
 	}
@@ -115,12 +146,29 @@ func ipPermissionEquals(source *ec2.IpPermission, target *ec2.IpPermission) bool
 	return true
 }
 
+// diffIPv6Ranges calculates set_difference as source - target
+func diffIPv6Ranges(source []*ec2.Ipv6Range, target []*ec2.Ipv6Range) (diffs []*ec2.Ipv6Range) {
+	for _, sRange := range source {
+		containsInTarget := false
+		for _, tRange := range target {
+			if ipRangeEquals(sRange.CidrIpv6, tRange.CidrIpv6) {
+				containsInTarget = true
+				break
+			}
+		}
+		if !containsInTarget {
+			diffs = append(diffs, sRange)
+		}
+	}
+	return diffs
+}
+
 // diffIPRanges calculates set_difference as source - target
 func diffIPRanges(source []*ec2.IpRange, target []*ec2.IpRange) (diffs []*ec2.IpRange) {
 	for _, sRange := range source {
 		containsInTarget := false
 		for _, tRange := range target {
-			if ipRangeEquals(sRange, tRange) {
+			if ipRangeEquals(sRange.CidrIp, tRange.CidrIp) {
 				containsInTarget = true
 				break
 			}
@@ -133,8 +181,8 @@ func diffIPRanges(source []*ec2.IpRange, target []*ec2.IpRange) (diffs []*ec2.Ip
 }
 
 // ipRangeEquals test whether two IPRange instance are equals
-func ipRangeEquals(source *ec2.IpRange, target *ec2.IpRange) bool {
-	return aws.StringValue(source.CidrIp) == aws.StringValue(target.CidrIp)
+func ipRangeEquals(source *string, target *string) bool {
+	return aws.StringValue(source) == aws.StringValue(target)
 }
 
 // diffUserIDGroupPairs calculates set_difference as source - target

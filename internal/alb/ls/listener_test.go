@@ -3,11 +3,9 @@ package ls
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/acm"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/golang/mock/gomock"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/alb/tg"
@@ -119,9 +117,18 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					Port:            aws.Int64(80),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							TargetGroupArn: aws.String("tgArn"),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{TargetGroupArn: aws.String("tgArn"),
+										Weight: aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -236,9 +243,18 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					Port:      aws.Int64(443),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{TargetGroupArn: aws.String("tgArn"),
+										Weight: aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -310,9 +326,18 @@ func TestDefaultController_Reconcile(t *testing.T) {
 				SslPolicy: aws.String("sslPolicy"),
 				DefaultActions: []*elbv2.Action{
 					{
-						Order:          aws.Int64(1),
-						Type:           aws.String(elbv2.ActionTypeEnumForward),
-						TargetGroupArn: aws.String("tgArn"),
+						Order: aws.Int64(1),
+						Type:  aws.String(elbv2.ActionTypeEnumForward),
+						ForwardConfig: &elbv2.ForwardActionConfig{
+							TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+								Enabled: aws.Bool(false),
+							},
+							TargetGroups: []*elbv2.TargetGroupTuple{
+								{TargetGroupArn: aws.String("tgArn"),
+									Weight: aws.Int64(1),
+								},
+							},
+						},
 					},
 				},
 			},
@@ -338,9 +363,18 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{TargetGroupArn: aws.String("tgArn"),
+										Weight: aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -391,9 +425,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 				SslPolicy:    nil,
 				DefaultActions: []*elbv2.Action{
 					{
-						Order:          aws.Int64(1),
-						Type:           aws.String(elbv2.ActionTypeEnumForward),
-						TargetGroupArn: aws.String("tgArn2"),
+						Order: aws.Int64(1),
+						Type:  aws.String(elbv2.ActionTypeEnumForward),
+						ForwardConfig: &elbv2.ForwardActionConfig{
+							TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+								Enabled: aws.Bool(false),
+							},
+							TargetGroups: []*elbv2.TargetGroupTuple{
+								{
+									TargetGroupArn: aws.String("tgArn2"),
+									Weight:         aws.Int64(1),
+								},
+							},
+						},
 					},
 				},
 			},
@@ -411,9 +455,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -429,9 +483,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -458,9 +522,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -515,9 +589,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 				SslPolicy: aws.String("sslPolicy"),
 				DefaultActions: []*elbv2.Action{
 					{
-						Order:          aws.Int64(1),
-						Type:           aws.String(elbv2.ActionTypeEnumForward),
-						TargetGroupArn: aws.String("tgArn"),
+						Order: aws.Int64(1),
+						Type:  aws.String(elbv2.ActionTypeEnumForward),
+						ForwardConfig: &elbv2.ForwardActionConfig{
+							TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+								Enabled: aws.Bool(false),
+							},
+							TargetGroups: []*elbv2.TargetGroupTuple{
+								{
+									TargetGroupArn: aws.String("tgArn"),
+									Weight:         aws.Int64(1),
+								},
+							},
+						},
 					},
 				},
 			},
@@ -595,9 +679,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -648,9 +742,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 				SslPolicy:    nil,
 				DefaultActions: []*elbv2.Action{
 					{
-						Order:          aws.Int64(1),
-						Type:           aws.String(elbv2.ActionTypeEnumForward),
-						TargetGroupArn: aws.String("tgArn2"),
+						Order: aws.Int64(1),
+						Type:  aws.String(elbv2.ActionTypeEnumForward),
+						ForwardConfig: &elbv2.ForwardActionConfig{
+							TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+								Enabled: aws.Bool(false),
+							},
+							TargetGroups: []*elbv2.TargetGroupTuple{
+								{
+									TargetGroupArn: aws.String("tgArn2"),
+									Weight:         aws.Int64(1),
+								},
+							},
+						},
 					},
 				},
 			},
@@ -668,9 +772,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					SslPolicy: aws.String("sslPolicy"),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
-							TargetGroupArn: aws.String("tgArn"),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -776,9 +890,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					Port:            aws.Int64(80),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							TargetGroupArn: aws.String("tgArn"),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -829,9 +953,19 @@ func TestDefaultController_Reconcile(t *testing.T) {
 					Port:            aws.Int64(80),
 					DefaultActions: []*elbv2.Action{
 						{
-							Order:          aws.Int64(1),
-							TargetGroupArn: aws.String("tgArn"),
-							Type:           aws.String(elbv2.ActionTypeEnumForward),
+							Order: aws.Int64(1),
+							Type:  aws.String(elbv2.ActionTypeEnumForward),
+							ForwardConfig: &elbv2.ForwardActionConfig{
+								TargetGroupStickinessConfig: &elbv2.TargetGroupStickinessConfig{
+									Enabled: aws.Bool(false),
+								},
+								TargetGroups: []*elbv2.TargetGroupTuple{
+									{
+										TargetGroupArn: aws.String("tgArn"),
+										Weight:         aws.Int64(1),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -901,258 +1035,6 @@ func TestDefaultController_Reconcile(t *testing.T) {
 			assert.Equal(t, tc.ExpectedError, err)
 			cloud.AssertExpectations(t)
 			mockRulesController.AssertExpectations(t)
-		})
-	}
-}
-
-func Test_domainMatchesHost(t *testing.T) {
-	var tests = []struct {
-		domain string
-		host   string
-		want   bool
-	}{
-		{"example.com", "example.com", true},
-		{"example.com", "exampl0.com", false},
-
-		// wildcards
-		{"*.example.com", "foo.example.com", true},
-		{"*.example.com", "example.com", false},
-		{"*.exampl0.com", "foo.example.com", false},
-
-		// invalid hosts, not sure these are possible
-		{"*.*.example.com", "foo.bar.example.com", false},
-		{"foo.*.example.com", "foo.bar.example.com", false},
-	}
-
-	for _, test := range tests {
-		var msg = "should"
-		if !test.want {
-			msg = "should not"
-		}
-
-		t.Run(fmt.Sprintf("%s %s match %s", test.domain, msg, test.host), func(t *testing.T) {
-			have := domainMatchesHost(test.domain, test.host)
-			if test.want != have {
-				t.Fail()
-			}
-		})
-	}
-}
-
-func Test_inferCertARNs(t *testing.T) {
-	var tests = []struct {
-		name      string
-		ingress   *extensions.Ingress
-		acmResult []acm.CertificateSummary
-		acmErr    error
-		expected  int
-	}{
-		{
-			name: "when ACM has exact match as TLS host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					TLS: []extensions.IngressTLS{
-						{
-							Hosts: []string{"foo.example.com"},
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("foo.example.com"),
-				},
-			},
-			expected: 1,
-		}, {
-			name: "when ACM has wildcard match with TLS host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					TLS: []extensions.IngressTLS{
-						{
-							Hosts: []string{"foo.example.com"},
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("*.example.com"),
-				},
-			},
-			expected: 1,
-		}, {
-			name: "when ACM has multiple matches with TLS host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					TLS: []extensions.IngressTLS{
-						{
-							Hosts: []string{"foo.example.com"},
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:mmm"),
-					DomainName:     aws.String("*.example.com"),
-				},
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("foo.example.com"),
-				},
-			},
-			expected: 2,
-		}, {
-			name: "when ACM has exact match as Rules host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
-						{
-							Host: "foo.example.com",
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("foo.example.com"),
-				},
-			},
-			expected: 1,
-		}, {
-			name: "when ACM has wildcard match with Rules host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
-						{
-							Host: "foo.example.com",
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("*.example.com"),
-				},
-			},
-			expected: 1,
-		}, {
-			name: "when ACM has multiple matches with Rules host",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
-						{
-							Host: "foo.example.com",
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:mmm"),
-					DomainName:     aws.String("*.example.com"),
-				},
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("foo.example.com"),
-				},
-			},
-			expected: 2,
-		}, {
-			name: "when ACM has multiple matches with Rules and TLS hosts",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					TLS: []extensions.IngressTLS{
-						{
-							Hosts: []string{"foo.example.com"},
-						},
-					},
-					Rules: []extensions.IngressRule{
-						{
-							Host: "foo.example.com",
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:mmm"),
-					DomainName:     aws.String("*.example.com"),
-				},
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("foo.example.com"),
-				},
-			},
-			expected: 2,
-		}, {
-			name: "when ACM has multiple matches with multiple wildcard hosts",
-			ingress: &extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					TLS: []extensions.IngressTLS{
-						{
-							Hosts: []string{"foo.bar.example.com", "bar.baz.example.com"},
-						},
-					},
-					Rules: []extensions.IngressRule{
-						{
-							Host: "foo.bar.example.com",
-						},
-						{
-							Host: "bar.baz.example.com",
-						},
-					},
-				},
-			},
-			acmResult: []acm.CertificateSummary{
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:mmm"),
-					DomainName:     aws.String("*.baz.example.com"),
-				},
-				{
-					CertificateArn: aws.String("arn:acm:xxx:yyy:zzz/kkk:www"),
-					DomainName:     aws.String("*.bar.example.com"),
-				},
-			},
-			expected: 2,
-		}, {
-			name:     "when ACM returns error",
-			ingress:  &extensions.Ingress{},
-			acmErr:   fmt.Errorf("expected error"),
-			expected: 0,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			mockedCloud := &mocks.CloudAPI{}
-			mockedCloud.On("ListCertificates", []string{acm.CertificateStatusIssued}).Return(test.acmResult, test.acmErr)
-
-			ctrl := defaultController{
-				cloud: mockedCloud,
-			}
-
-			certificates, err := ctrl.inferCertARNs(context.TODO(), test.ingress)
-			if test.acmErr != err {
-				t.Error(err)
-			}
-
-			if len(certificates) != test.expected {
-				t.Errorf("Expected %d, got %d certificates in result", test.expected, len(certificates))
-			}
-
-			for i, cert := range certificates {
-				want := aws.StringValue(test.acmResult[i].CertificateArn)
-				have := cert
-				if want != have {
-					t.Errorf("Certificate ARNs don't match: expected %s, got %s", want, have)
-				}
-			}
 		})
 	}
 }

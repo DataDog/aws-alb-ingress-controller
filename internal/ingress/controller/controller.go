@@ -33,7 +33,7 @@ func Initialize(config *config.Configuration, mgr manager.Manager, mc metric.Col
 	if err != nil {
 		return err
 	}
-	c, err := controller.New("alb-ingress-controller", mgr, controller.Options{Reconciler: reconciler})
+	c, err := controller.New("alb-ingress-controller", mgr, controller.Options{Reconciler: reconciler, MaxConcurrentReconciles: config.MaxConcurrentReconciles})
 	if err != nil {
 		return err
 	}
@@ -58,17 +58,18 @@ func newReconciler(config *config.Configuration, mgr manager.Manager, mc metric.
 	if err != nil {
 		return nil, err
 	}
+	client := mgr.GetClient()
 	nameTagGenerator := generator.NewNameTagGenerator(*config)
 	tagsController := tags.NewController(cloud)
 	endpointResolver := backend.NewEndpointResolver(store, cloud)
-	tgGroupController := tg.NewGroupController(cloud, store, nameTagGenerator, tagsController, endpointResolver)
+	tgGroupController := tg.NewGroupController(cloud, store, nameTagGenerator, tagsController, endpointResolver, client)
 	lsGroupController := ls.NewGroupController(store, cloud, authModule)
 	sgAssociationController := sg.NewAssociationController(store, cloud, tagsController, nameTagGenerator)
 	lbController := lb.NewController(cloud, store,
 		nameTagGenerator, tgGroupController, lsGroupController, sgAssociationController, tagsController)
 
 	return &Reconciler{
-		client:          mgr.GetClient(),
+		client:          client,
 		cache:           mgr.GetCache(),
 		recorder:        mgr.GetRecorder("alb-ingress-controller"),
 		store:           store,

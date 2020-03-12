@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/action"
+	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/conditions"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/healthcheck"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/loadbalancer"
 	"github.com/kubernetes-sigs/aws-alb-ingress-controller/internal/ingress/annotations/parser"
@@ -46,6 +47,7 @@ type Ingress struct {
 	// TODO: found out why the ObjectMeta is needed?
 	metav1.ObjectMeta
 	Action       *action.Config
+	Conditions   *conditions.Config
 	HealthCheck  *healthcheck.Config
 	TargetGroup  *targetgroup.Config
 	LoadBalancer *loadbalancer.Config
@@ -71,6 +73,7 @@ func (s *Service) Merge(b *Ingress, cfg *config.Configuration) *Service {
 	return &Service{
 		ObjectMeta:   s.ObjectMeta,
 		Action:       s.Action,
+		Conditions:   s.Conditions,
 		LoadBalancer: s.LoadBalancer,
 		Tags:         s.Tags,
 		Error:        s.Error,
@@ -96,7 +99,8 @@ type Extractor struct {
 func NewIngressAnnotationExtractor(cfg resolver.Resolver) Extractor {
 	return Extractor{
 		map[string]parser.IngressAnnotation{
-			"Action":       action.NewParser(cfg),
+			"Action":       action.NewParser(),
+			"Conditions":   conditions.NewParser(),
 			"HealthCheck":  healthcheck.NewParser(cfg),
 			"TargetGroup":  targetgroup.NewParser(cfg),
 			"LoadBalancer": loadbalancer.NewParser(cfg),
@@ -194,6 +198,20 @@ func LoadStringSliceAnnotation(annotation string, value *[]string, annotations .
 	}
 	*value = result
 	return true
+}
+
+func LoadBoolAnnocation(annotation string, value *bool, annotations ...map[string]string) (bool, error) {
+	key := parser.GetAnnotationWithPrefix(annotation)
+	raw, ok := utils.MapFindFirst(key, annotations...)
+	if !ok {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return true, pkgerrors.Wrapf(err, "failed to parse annotation, %v: %v", key, raw)
+	}
+	*value = b
+	return true, nil
 }
 
 // LoadInt64Annotation loads annotation into value of type int64 from list of annotations by priority.

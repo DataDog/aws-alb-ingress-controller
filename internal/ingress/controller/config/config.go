@@ -25,6 +25,7 @@ const (
 	defaultRestrictScheme          = false
 	defaultRestrictSchemeNamespace = corev1.NamespaceDefault
 	defaultSyncRateLimit           = 0.3
+	defaultMaxConcurrentReconciles = 1
 )
 
 const (
@@ -54,7 +55,8 @@ type Configuration struct {
 	DefaultTargetType      string
 	DefaultBackendProtocol string
 
-	SyncRateLimit float32
+	SyncRateLimit           float32
+	MaxConcurrentReconciles int
 
 	RestrictScheme          bool
 	RestrictSchemeNamespace string
@@ -100,6 +102,8 @@ func (cfg *Configuration) BindFlags(fs *pflag.FlagSet) {
 		`Default protocol to use for target groups, must be "HTTP" or "HTTPS"`)
 	fs.Float32Var(&cfg.SyncRateLimit, "sync-rate-limit", defaultSyncRateLimit,
 		`Define the sync frequency upper limit`)
+	fs.IntVar(&cfg.MaxConcurrentReconciles, "max-concurrent-reconciles", defaultMaxConcurrentReconciles,
+		`Define the maximum of number concurrently running reconcile loops`)
 	fs.BoolVar(&cfg.RestrictScheme, "restrict-scheme", defaultRestrictScheme,
 		`Restrict the scheme to internal except for whitelisted namespaces`)
 	fs.StringVar(&cfg.RestrictSchemeNamespace, "restrict-scheme-namespace", defaultRestrictSchemeNamespace,

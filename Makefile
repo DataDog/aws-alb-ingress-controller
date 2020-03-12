@@ -17,13 +17,14 @@
 
 all: container
 
-TAG?=v1.1.2
+TAG?=v1.1.5
 PREFIX?=amazon/aws-alb-ingress-controller
 ARCH?=amd64
 OS?=linux
 PKG=github.com/kubernetes-sigs/aws-alb-ingress-controller
 REPO_INFO=$(shell git config --get remote.origin.url)
 GO111MODULE=on
+GOPROXY=direct
 GOBIN:=$(shell pwd)/.bin
 
 .EXPORT_ALL_VARIABLES:
@@ -37,7 +38,7 @@ LDFLAGS=-X $(PKG)/version.COMMIT=$(GIT_COMMIT) -X $(PKG)/version.RELEASE=$(TAG) 
 server: cmd/main.go
 	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -a -installsuffix cgo -ldflags '-s -w $(LDFLAGS)' -o server ./cmd
 
-container: server
+container:
 	docker build --pull -t $(PREFIX):$(TAG) .
 
 push:
@@ -54,7 +55,8 @@ unit-test:
 	@./scripts/ci_unit_test.sh
 
 e2e-test:
-	@./scripts/ci_e2e_test.sh
+	go get github.com/aws/aws-k8s-tester/e2e/tester/cmd/k8s-e2e-tester@master
+	TESTCONFIG=./tester/test-config.yaml ${GOBIN}/k8s-e2e-tester
 
 test:unit-test
 
