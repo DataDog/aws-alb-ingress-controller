@@ -80,11 +80,11 @@ func (r *Reconciler) deleteService(ctx context.Context, serviceKey types.Namespa
 }
 
 func (r *Reconciler) updateServiceAnnotations(ctx context.Context, service *corev1.Service, lbInfo *lb.LoadBalancer) error {
-	if _, ok := service.Annotations["external-dns.alpha.kubernetes.io/target"]; !ok {
-		service.Annotations["external-dns.alpha.kubernetes.io/target"] = lbInfo.DNSName
-		return r.client.Update(ctx, service)
+	if lb, ok := service.Annotations["external-dns.alpha.kubernetes.io/target"]; ok && lb == lbInfo.DNSName {
+		return nil
 	}
-	return nil
+	service.Annotations["external-dns.alpha.kubernetes.io/target"] = lbInfo.DNSName
+	return r.client.Update(ctx, service)
 }
 
 func (r *Reconciler) buildReconcileContext(ctx context.Context, serviceKey types.NamespacedName, service *corev1.Service) context.Context {

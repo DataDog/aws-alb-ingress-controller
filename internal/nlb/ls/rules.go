@@ -36,6 +36,13 @@ func buildActions(ctx context.Context, serviceAnnos *annotations.Service, backen
 		backendAction := elbv2.Action{
 			Type:           aws.String(elbv2.ActionTypeEnumForward),
 			TargetGroupArn: aws.String(targetGroup.Arn),
+			ForwardConfig: &elbv2.ForwardActionConfig{
+				TargetGroups: []*elbv2.TargetGroupTuple{
+					{
+						TargetGroupArn: aws.String(targetGroup.Arn),
+					},
+				},
+			},
 		}
 		actions = append(actions, &backendAction)
 	}
