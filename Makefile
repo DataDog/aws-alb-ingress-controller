@@ -17,7 +17,7 @@
 
 all: container
 
-TAG?=v1.1.5
+TAG?=v1.1.6
 PREFIX?=amazon/aws-alb-ingress-controller
 ARCH?=amd64
 OS?=linux
@@ -62,7 +62,7 @@ test:unit-test
 
 # build & preview docs
 docs-serve:
-	pipenv run mkdocs serve
+	pipenv install && pipenv run mkdocs serve
 # deploy docs to github-pages(gh-pages branch)
 docs-deploy:
-	pipenv run mkdocs gh-deploy
+	pipenv install && pipenv run mkdocs gh-deploy
