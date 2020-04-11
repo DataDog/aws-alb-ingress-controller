@@ -205,8 +205,9 @@ func (controller *defaultController) resolveServiceHealthCheckPort(namespace str
 
 func (controller *defaultController) TGInstanceNeedsModification(ctx context.Context, instance *elbv2.TargetGroup, serviceAnnos *annotations.Service) bool {
 	needsChange := false
-	if !util.DeepEqual(instance.HealthCheckPath, serviceAnnos.HealthCheck.Path) &&
-		(*serviceAnnos.HealthCheck.Protocol == "HTTP" || *serviceAnnos.HealthCheck.Protocol == "HTTPS") {
+	if serviceAnnos.HealthCheck.Protocol != nil &&
+		(*serviceAnnos.HealthCheck.Protocol == "HTTP" || *serviceAnnos.HealthCheck.Protocol == "HTTPS") &&
+		!util.DeepEqual(instance.HealthCheckPath, serviceAnnos.HealthCheck.Path) {
 		needsChange = true
 	}
 	if !util.DeepEqual(instance.HealthCheckPort, serviceAnnos.HealthCheck.Port) {
