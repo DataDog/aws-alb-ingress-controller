@@ -22,7 +22,7 @@ const (
 	DeregistrationDelayTimeoutSeconds = 300
 	SlowStartDurationSeconds          = 0
 	StickinessEnabled                 = false
-	StickinessType                    = "lb_cookie"
+	StickinessType                    = "source_ip"
 	StickinessLbCookieDurationSeconds = 86400
 )
 
@@ -45,8 +45,8 @@ type Attributes struct {
 	// The value is true or false. The default is false.
 	StickinessEnabled bool
 
-	// StickinessType: stickiness.type - The type of sticky sessions. The possible value is
-	// lb_cookie.
+	// StickinessType: stickiness.type - The type of sticky sessions. The possible values are
+	// lb_cookie or source_ip.
 	StickinessType string
 
 	// StickinessLbCookieDurationSeconds: stickiness.lb_cookie.duration_seconds - The time period, in seconds,
@@ -92,7 +92,7 @@ func NewAttributes(attrs []*elbv2.TargetGroupAttribute) (a *Attributes, err erro
 			}
 		case StickinessTypeKey:
 			a.StickinessType = attrValue
-			if attrValue != "lb_cookie" {
+			if attrValue != "lb_cookie" && attrValue != "source_ip" {
 				return a, fmt.Errorf("invalid target group attribute value %s=%s", attrKey, attrValue)
 			}
 		case StickinessLbCookieDurationSecondsKey:
@@ -172,7 +172,7 @@ func attributesChangeSet(a, b *Attributes) (changeSet []*elbv2.TargetGroupAttrib
 		changeSet = append(changeSet, tgAttribute(StickinessEnabledKey, fmt.Sprintf("%v", b.StickinessEnabled)))
 	}
 
-	if a.StickinessType != b.StickinessType {
+	if (a.StickinessEnabled || b.StickinessEnabled) && (a.StickinessType != b.StickinessType) {
 		changeSet = append(changeSet, tgAttribute(StickinessTypeKey, b.StickinessType))
 	}
 
