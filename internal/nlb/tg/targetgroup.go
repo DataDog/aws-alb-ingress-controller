@@ -236,7 +236,7 @@ func (controller *defaultController) buildTags(service *corev1.Service, backend 
 	for k, v := range controller.nameTagGen.TagTGGroup(service.Namespace, service.Name) {
 		tgTags[k] = v
 	}
-	for k, v := range controller.nameTagGen.TagTG(backend.ServiceName, backend.ServicePort.String()) {
+	for k, v := range controller.nameTagGen.TagTG(service.Namespace, backend.ServiceName, backend.ServicePort.String()) {
 		tgTags[k] = v
 	}
 	for k, v := range serviceAnnos.Tags.LoadBalancer {
