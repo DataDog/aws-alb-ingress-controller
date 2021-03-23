@@ -44,7 +44,7 @@ func (gen *TagGenerator) TagTG(namespace, serviceName string, servicePort string
 	return map[string]string{
 		TagKeyServiceName:        serviceName,
 		TagKeyServicePort:        servicePort,
-		TagKeyLBCServiceResource: fmt.Sprintf("%s/%s:%d", namespace, serviceName, servicePort),
+		TagKeyLBCServiceResource: fmt.Sprintf("%s/%s:%s", namespace, serviceName, servicePort),
 	}
 }
 
